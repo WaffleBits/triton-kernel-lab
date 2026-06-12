@@ -23,6 +23,10 @@ dtype. Every benchmark case validates both the custom kernel and a
 - CUDA events surround each queued operation.
 - The benchmark synchronizes after the timed batch, then reports min, p50, p95,
   p99, and max instead of relying on a single best result.
+- Cache-cold mode is the default. A 256 MiB eviction buffer is touched on the
+  same CUDA stream before each start event, so eviction is ordered before but
+  excluded from the timed region. `--cache-mode hot` explicitly selects a
+  resident-working-set measurement.
 - PyTorch eager, `torch.compile`, and Triton operate on the same preallocated
   tensors.
 - The report records GPU model, compute capability, CUDA runtime, PyTorch,

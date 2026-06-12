@@ -12,8 +12,8 @@ baseline regression gate.
 - Triton GPU kernel development with FP32 reduction and fused normalization.
 - Correctness validation across shapes and low-precision dtypes before timing,
   including validation of the `torch.compile` baseline against the FP32 oracle.
-- GPU benchmarking with warmup, CUDA events, p50/p95/p99/max latency, and
-  reproducible environment metadata.
+- GPU benchmarking with warmup, CUDA events, p50/p95/p99/max latency, explicit
+  cache state, and reproducible environment metadata.
 - Performance reasoning that distinguishes a logical bandwidth model from
   hardware-counter evidence.
 - CPU-only CI for parsers, statistics, report contracts, linting, and CLI shape.
@@ -39,6 +39,28 @@ triton-kernel-lab \
 ```
 
 The benchmark refuses to publish timing data when a correctness case fails.
+Cache-cold timing is the default; use `--cache-mode hot` only when a
+resident-working-set result is intentionally required.
+
+## Measured Result
+
+Cache-cold run on June 12, 2026 using an RTX 5070 Ti, CUDA 13.0, PyTorch 2.12,
+and Triton 3.7. Each case used 100 warmups, 500 timed samples, and a 256 MiB
+cache-eviction buffer outside the timed region.
+
+| Shape | Dtype | Triton p50 | `torch.compile` p50 | Speedup |
+|---|---:|---:|---:|---:|
+| 128 x 1024 | FP16 | 0.0061 ms | 0.0150 ms | 2.44x |
+| 512 x 4096 | FP16 | 0.0143 ms | 0.0164 ms | 1.15x |
+| 2048 x 4096 | FP16 | 0.0451 ms | 0.0522 ms | 1.16x |
+| 128 x 1024 | BF16 | 0.0061 ms | 0.0123 ms | 2.01x |
+| 512 x 4096 | BF16 | 0.0144 ms | 0.0195 ms | 1.36x |
+| 2048 x 4096 | BF16 | 0.0431 ms | 0.0532 ms | 1.23x |
+
+The full environment record, correctness errors, p95/p99 tails, and timing
+samples are in
+[artifacts/rtx-5070-ti-rmsnorm.json](artifacts/rtx-5070-ti-rmsnorm.json).
+These results are specific to this hardware and software stack.
 
 ## Regression Gate
 

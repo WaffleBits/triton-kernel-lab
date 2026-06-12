@@ -48,6 +48,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repeats", type=int, default=200)
     parser.add_argument("--epsilon", type=float, default=1e-6)
     parser.add_argument("--seed", type=int, default=17)
+    parser.add_argument(
+        "--cache-mode",
+        choices=("cold", "hot"),
+        default="cold",
+        help="Evict timed tensors from cache before each sample, or reuse them hot.",
+    )
+    parser.add_argument(
+        "--cache-flush-mib",
+        type=int,
+        default=256,
+        help="Eviction buffer size used by cold-cache timing.",
+    )
     parser.add_argument("--output", type=Path, default=Path("artifacts/latest.json"))
     parser.add_argument("--baseline", type=Path)
     parser.add_argument("--max-regression-percent", type=float, default=10.0)
@@ -65,14 +77,24 @@ def _git_commit() -> str | None:
         return None
 
 
-def _measure_cuda_ms(torch: Any, operation: Any, warmup: int, repeats: int) -> list[float]:
+def _measure_cuda_ms(
+    torch: Any,
+    operation: Any,
+    warmup: int,
+    repeats: int,
+    cache_flush: Any | None,
+) -> list[float]:
     for _ in range(warmup):
+        if cache_flush is not None:
+            cache_flush.add_(1)
         operation()
     torch.cuda.synchronize()
 
     starts = [torch.cuda.Event(enable_timing=True) for _ in range(repeats)]
     ends = [torch.cuda.Event(enable_timing=True) for _ in range(repeats)]
     for start, end in zip(starts, ends, strict=True):
+        if cache_flush is not None:
+            cache_flush.add_(1)
         start.record()
         operation()
         end.record()
@@ -94,6 +116,7 @@ def _run_case(
     epsilon: float,
     warmup: int,
     repeats: int,
+    cache_flush: Any | None,
 ) -> dict[str, Any]:
     from triton_kernel_lab.rmsnorm import rmsnorm_reference, rmsnorm_triton
 
@@ -128,18 +151,21 @@ def _run_case(
         lambda: rmsnorm_triton(inputs, weight, epsilon),
         warmup,
         repeats,
+        cache_flush,
     )
     compiled_samples = _measure_cuda_ms(
         torch,
         lambda: compiled_reference(inputs, weight, epsilon),
         warmup,
         repeats,
+        cache_flush,
     )
     eager_samples = _measure_cuda_ms(
         torch,
         lambda: rmsnorm_reference(inputs, weight, epsilon),
         warmup,
         repeats,
+        cache_flush,
     )
     triton_summary = summarize_timings(triton_samples)
     compiled_summary = summarize_timings(compiled_samples)
@@ -199,11 +225,20 @@ def _build_report(args: argparse.Namespace) -> dict[str, Any]:
         raise RuntimeError("CUDA is not available to PyTorch")
     if args.warmup < 0 or args.repeats <= 0:
         raise ValueError("warmup must be non-negative and repeats must be positive")
+    if args.cache_flush_mib <= 0:
+        raise ValueError("cache_flush_mib must be positive")
 
     torch.manual_seed(args.seed)
     shapes = args.shapes or [(128, 1024), (512, 4096), (2048, 4096)]
     dtypes = args.dtypes or ["float16", "bfloat16"]
     properties = torch.cuda.get_device_properties(0)
+    cache_flush = None
+    if args.cache_mode == "cold":
+        cache_flush = torch.empty(
+            args.cache_flush_mib * 1024 * 1024,
+            device="cuda",
+            dtype=torch.int8,
+        )
 
     cases = [
         _run_case(
@@ -214,6 +249,7 @@ def _build_report(args: argparse.Namespace) -> dict[str, Any]:
             epsilon=args.epsilon,
             warmup=args.warmup,
             repeats=args.repeats,
+            cache_flush=cache_flush,
         )
         for dtype_name in dtypes
         for shape in shapes
@@ -238,6 +274,8 @@ def _build_report(args: argparse.Namespace) -> dict[str, Any]:
             "timed_iterations": args.repeats,
             "seed": args.seed,
             "timing": "CUDA events around each queued operation, synchronized after the batch",
+            "cache_mode": args.cache_mode,
+            "cache_flush_mib": args.cache_flush_mib if cache_flush is not None else 0,
             "oracle": "PyTorch implementation with FP32 accumulation",
             "bandwidth": "Logical input read + weight read + output write bytes divided by p50",
         },
