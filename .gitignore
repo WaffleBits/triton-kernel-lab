@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+artifacts/*.tmp
+artifacts/candidate.json
+artifacts/latest.json
+artifacts/smoke.json
