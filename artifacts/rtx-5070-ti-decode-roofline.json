@@ -1,0 +1,201 @@
+{
+  "schema_version": 1,
+  "source_artifacts": [
+    "artifacts\\rtx-5070-ti-qk-dot.json",
+    "artifacts\\rtx-5070-ti-paged-gather.json",
+    "artifacts\\rtx-5070-ti-selective-attention.json",
+    "artifacts\\rtx-5070-ti-residual-rmsnorm.json",
+    "artifacts\\rtx-5070-ti-int4-gemv.json"
+  ],
+  "assumptions": {
+    "peak_memory_bandwidth_gbps": 896.0,
+    "peak_compute_tflops": 43.9,
+    "traffic": "logical payload bytes, not measured DRAM transactions",
+    "compute": "logical FLOPs, excluding address and conversion instructions"
+  },
+  "cases": [
+    {
+      "kernel": "qk-dot",
+      "shape": [
+        512,
+        128
+      ],
+      "dtype": "float16",
+      "p50_ms": 0.005456000100821257,
+      "logical_bytes": 264192,
+      "logical_flops": 131072,
+      "achieved_logical_bandwidth_gbps": 48.422286495235376,
+      "bandwidth_fraction_of_spec": 0.05404273046343234,
+      "classification": "memory-bound",
+      "arithmetic_intensity_flops_per_byte": 0.49612403100775193,
+      "achieved_gflops": 24.0234599666284,
+      "memory_ceiling_gflops": 444.52713178294573,
+      "compute_ceiling_gflops": 43900.0,
+      "roofline_efficiency": 0.05404273046343233
+    },
+    {
+      "kernel": "qk-dot",
+      "shape": [
+        2048,
+        128
+      ],
+      "dtype": "float16",
+      "p50_ms": 0.007775999838486314,
+      "logical_bytes": 1056768,
+      "logical_flops": 524288,
+      "achieved_logical_bandwidth_gbps": 135.9012373906777,
+      "bandwidth_fraction_of_spec": 0.1516754881592385,
+      "classification": "memory-bound",
+      "arithmetic_intensity_flops_per_byte": 0.49612403100775193,
+      "achieved_gflops": 67.42386971320444,
+      "memory_ceiling_gflops": 444.52713178294573,
+      "compute_ceiling_gflops": 43900.0,
+      "roofline_efficiency": 0.1516754881592385
+    },
+    {
+      "kernel": "paged-gather",
+      "shape": [
+        128,
+        128
+      ],
+      "dtype": "float16",
+      "p50_ms": 0.004991999827325344,
+      "logical_bytes": 66048,
+      "logical_flops": 0,
+      "achieved_logical_bandwidth_gbps": 13.230769688425202,
+      "bandwidth_fraction_of_spec": 0.01476648402726027,
+      "classification": "data-movement-only",
+      "arithmetic_intensity_flops_per_byte": 0.0
+    },
+    {
+      "kernel": "paged-gather",
+      "shape": [
+        512,
+        128
+      ],
+      "dtype": "float16",
+      "p50_ms": 0.005696000065654516,
+      "logical_bytes": 264192,
+      "logical_flops": 0,
+      "achieved_logical_bandwidth_gbps": 46.38202193729122,
+      "bandwidth_fraction_of_spec": 0.051765649483583955,
+      "classification": "data-movement-only",
+      "arithmetic_intensity_flops_per_byte": 0.0
+    },
+    {
+      "kernel": "selective-attention",
+      "shape": [
+        64,
+        128
+      ],
+      "dtype": "bfloat16",
+      "p50_ms": 0.0063680000603199005,
+      "logical_bytes": 33536,
+      "logical_flops": 33088,
+      "achieved_logical_bandwidth_gbps": 5.266331608406942,
+      "bandwidth_fraction_of_spec": 0.005877602241525605,
+      "classification": "memory-bound",
+      "arithmetic_intensity_flops_per_byte": 0.9866412213740458,
+      "achieved_gflops": 5.195979850279367,
+      "memory_ceiling_gflops": 884.030534351145,
+      "compute_ceiling_gflops": 43900.0,
+      "roofline_efficiency": 0.005877602241525604
+    },
+    {
+      "kernel": "selective-attention",
+      "shape": [
+        256,
+        128
+      ],
+      "dtype": "bfloat16",
+      "p50_ms": 0.01152000017464161,
+      "logical_bytes": 132608,
+      "logical_flops": 132352,
+      "achieved_logical_bandwidth_gbps": 11.51111093660426,
+      "bandwidth_fraction_of_spec": 0.01284722202746011,
+      "classification": "memory-bound",
+      "arithmetic_intensity_flops_per_byte": 0.9980694980694981,
+      "achieved_gflops": 11.488888714718923,
+      "memory_ceiling_gflops": 894.2702702702703,
+      "compute_ceiling_gflops": 43900.0,
+      "roofline_efficiency": 0.01284722202746011
+    },
+    {
+      "kernel": "residual-rmsnorm",
+      "shape": [
+        1,
+        1536
+      ],
+      "dtype": "bfloat16",
+      "p50_ms": 0.00531200016848743,
+      "logical_bytes": 15360,
+      "logical_flops": 9216,
+      "achieved_logical_bandwidth_gbps": 2.8915661733447755,
+      "bandwidth_fraction_of_spec": 0.003227194389893723,
+      "classification": "memory-bound",
+      "arithmetic_intensity_flops_per_byte": 0.6,
+      "achieved_gflops": 1.7349397040068655,
+      "memory_ceiling_gflops": 537.6,
+      "compute_ceiling_gflops": 43900.0,
+      "roofline_efficiency": 0.003227194389893723
+    },
+    {
+      "kernel": "residual-rmsnorm",
+      "shape": [
+        4,
+        1536
+      ],
+      "dtype": "bfloat16",
+      "p50_ms": 0.00508800009265542,
+      "logical_bytes": 52224,
+      "logical_flops": 36864,
+      "achieved_logical_bandwidth_gbps": 10.264150756480108,
+      "bandwidth_fraction_of_spec": 0.011455525397857264,
+      "classification": "memory-bound",
+      "arithmetic_intensity_flops_per_byte": 0.7058823529411765,
+      "achieved_gflops": 7.245282886927136,
+      "memory_ceiling_gflops": 632.4705882352941,
+      "compute_ceiling_gflops": 43900.0,
+      "roofline_efficiency": 0.011455525397857264
+    },
+    {
+      "kernel": "int4-gemv",
+      "shape": [
+        1536,
+        1536
+      ],
+      "dtype": "bfloat16",
+      "p50_ms": 0.007727999938651919,
+      "logical_bytes": 1195008,
+      "logical_flops": 4718592,
+      "achieved_logical_bandwidth_gbps": 154.63354160021626,
+      "bandwidth_fraction_of_spec": 0.17258207767881278,
+      "classification": "memory-bound",
+      "arithmetic_intensity_flops_per_byte": 3.948586118251928,
+      "achieved_gflops": 610.5838557787458,
+      "memory_ceiling_gflops": 3537.9331619537274,
+      "compute_ceiling_gflops": 43900.0,
+      "roofline_efficiency": 0.17258207767881276
+    },
+    {
+      "kernel": "int4-gemv",
+      "shape": [
+        8960,
+        1536
+      ],
+      "dtype": "bfloat16",
+      "p50_ms": 0.020495999604463577,
+      "logical_bytes": 6956032,
+      "logical_flops": 27525120,
+      "achieved_logical_bandwidth_gbps": 339.38486213110235,
+      "bandwidth_fraction_of_spec": 0.37877774791417673,
+      "classification": "memory-bound",
+      "arithmetic_intensity_flops_per_byte": 3.9570145738259974,
+      "achieved_gflops": 1342.950845588699,
+      "memory_ceiling_gflops": 3545.4850581480937,
+      "compute_ceiling_gflops": 43900.0,
+      "roofline_efficiency": 0.37877774791417673
+    }
+  ],
+  "claim_boundary": "This is a specification-based roofline projection. Nsight Compute counters are required for physical memory-traffic and utilization claims."
+}

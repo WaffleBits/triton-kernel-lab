@@ -2,15 +2,18 @@
 
 Correctness-first GPU kernel work for inference performance engineering.
 
-The repository contains fused RMSNorm and SwiGLU kernels written in Triton,
+The repository contains RMSNorm, SwiGLU, decode QK dot-product, paged KV gather,
+fused residual-plus-RMSNorm, and signed INT4 GEMV kernels written in Triton,
 high-precision PyTorch oracles, PyTorch eager and `torch.compile` baselines, raw
-latency samples, effective-bandwidth modeling, machine-readable reports, and a
-baseline regression gate.
+latency samples, roofline modeling, machine-readable reports, and a baseline
+regression gate.
 
 ## What It Demonstrates
 
 - Triton GPU kernel development with FP32 reduction, fused normalization, and
   fused gated activation.
+- Decode-oriented kernels for attention scoring, non-contiguous KV movement,
+  residual normalization, and packed signed INT4 weight-only projection.
 - Shape-aware SwiGLU launch autotuning across block sizes and warp counts.
 - Correctness validation across shapes and low-precision dtypes before timing,
   including validation of the `torch.compile` baseline against the FP32 oracle.
@@ -67,9 +70,38 @@ samples are in
 [artifacts/rtx-5070-ti-rmsnorm-swiglu.json](artifacts/rtx-5070-ti-rmsnorm-swiglu.json).
 These results are specific to this hardware and software stack.
 
-The reported bandwidth remains a logical traffic model. Nsight Compute was not
-available in this environment, so the repository does not claim measured DRAM
-transactions, cache hit rates, occupancy, or tensor-core utilization.
+## Decode Kernel Results
+
+Serial cache-cold measurements on the same RTX 5070 Ti stack:
+
+| Kernel | Shape | Dtype | Triton p50 | `torch.compile` p50 | Speedup | Logical BW |
+|---|---:|---:|---:|---:|---:|---:|
+| QK dot | 512 x 128 | FP16 | 0.0055 ms | 0.0127 ms | 2.32x | 48.4 GB/s |
+| QK dot | 2,048 x 128 | FP16 | 0.0078 ms | 0.0141 ms | 1.81x | 135.9 GB/s |
+| Paged KV gather | 512 x 128 | FP16 | 0.0057 ms | 0.0163 ms | 2.85x | 46.4 GB/s |
+| Selected attention | 64 x 128 | BF16 | 0.0064 ms | 0.0185 ms | 2.90x | 5.3 GB/s |
+| Selected attention | 256 x 128 | BF16 | 0.0115 ms | 0.0185 ms | 1.60x | 11.5 GB/s |
+| Residual RMSNorm | 4 x 1,536 | BF16 | 0.0051 ms | 0.0121 ms | 2.37x | 10.3 GB/s |
+| INT4 GEMV | 1,536 x 1,536 | BF16 | 0.0077 ms | 0.0208 ms | 2.70x | 154.6 GB/s |
+| INT4 GEMV | 8,960 x 1,536 | BF16 | 0.0205 ms | 0.0449 ms | 2.19x | 339.4 GB/s |
+
+The checked roofline report uses the RTX 5070 Ti specification of 896 GB/s and
+labels all ten decode cases memory-bound or data-movement-only. Its best
+logical bandwidth fraction is 37.9% for the 8,960 x 1,536 INT4 GEMV. This is a
+specification-based projection, not a physical-traffic measurement.
+
+Nsight Compute 2026.2 is installed and the repository includes a filtered
+capture command. The current host returns `ERR_NVGPUCTRPERM` because Windows
+performance-counter access is disabled. No measured DRAM transactions, cache
+hit rates, occupancy, or execution-pipeline utilization are claimed.
+
+```bash
+triton-kernel-nsight \
+  --kernel int4-gemv \
+  --shape 8960x1536 \
+  --dtype bfloat16 \
+  --output artifacts/nsight/int4-gemv
+```
 
 ## Regression Gate
 
@@ -112,6 +144,5 @@ python -m compileall -q src tests
 ## Scope
 
 This is a focused kernel and measurement lab, not a claim of production-scale
-GPU infrastructure. Planned extensions are hardware-counter capture with
-Nsight Compute, roofline analysis, and additional low-precision inference
-kernels.
+GPU infrastructure. The remaining hardware-counter work depends on manually
+enabling NVIDIA counter access on the Windows host.

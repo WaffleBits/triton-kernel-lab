@@ -25,6 +25,16 @@ def test_parser_accepts_repeated_cases() -> None:
             "rmsnorm",
             "--kernel",
             "swiglu",
+            "--kernel",
+            "qk-dot",
+            "--kernel",
+            "paged-gather",
+            "--kernel",
+            "selective-attention",
+            "--kernel",
+            "residual-rmsnorm",
+            "--kernel",
+            "int4-gemv",
             "--shape",
             "128x1024",
             "--shape",
@@ -35,6 +45,14 @@ def test_parser_accepts_repeated_cases() -> None:
             "bfloat16",
         ]
     )
-    assert args.kernels == ["rmsnorm", "swiglu"]
+    assert args.kernels == [
+        "rmsnorm",
+        "swiglu",
+        "qk-dot",
+        "paged-gather",
+        "selective-attention",
+        "residual-rmsnorm",
+        "int4-gemv",
+    ]
     assert args.shapes == [(128, 1024), (512, 4096)]
     assert args.dtypes == ["float16", "bfloat16"]

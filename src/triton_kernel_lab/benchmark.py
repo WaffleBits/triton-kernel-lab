@@ -33,7 +33,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--kernel",
         action="append",
-        choices=("rmsnorm", "swiglu"),
+        choices=(
+            "rmsnorm",
+            "swiglu",
+            "qk-dot",
+            "paged-gather",
+            "selective-attention",
+            "residual-rmsnorm",
+            "int4-gemv",
+        ),
         dest="kernels",
         help="Kernel to benchmark. Repeat for multiple kernels.",
     )
@@ -326,6 +334,336 @@ def _run_swiglu_case(
     }
 
 
+def _run_qk_dot_case(
+    torch: Any,
+    shape: tuple[int, int],
+    dtype_name: str,
+    warmup: int,
+    repeats: int,
+    cache_flush: Any | None,
+) -> dict[str, Any]:
+    from triton_kernel_lab.qk_dot import qk_dot_reference, qk_dot_triton
+
+    dtype = getattr(torch, dtype_name)
+    query = torch.randn(shape, device="cuda", dtype=dtype)
+    key = torch.randn(shape, device="cuda", dtype=dtype)
+    expected = qk_dot_reference(query, key)
+    actual = qk_dot_triton(query, key)
+    compiled_reference = torch.compile(qk_dot_reference, fullgraph=True)
+    compiled_actual = compiled_reference(query, key)
+    torch.cuda.synchronize()
+    correctness = _validate_correctness(
+        torch,
+        actual,
+        expected,
+        compiled_actual,
+        shape,
+        dtype_name,
+        "qk-dot",
+    )
+    rows, hidden = shape
+    logical_bytes = 2 * rows * hidden * query.element_size() + rows * 4
+    measurements = _benchmark_implementations(
+        torch=torch,
+        triton_operation=lambda: qk_dot_triton(query, key),
+        compiled_operation=lambda: compiled_reference(query, key),
+        eager_operation=lambda: qk_dot_reference(query, key),
+        warmup=warmup,
+        repeats=repeats,
+        cache_flush=cache_flush,
+        logical_bytes=logical_bytes,
+    )
+    return {
+        "kernel": "qk-dot",
+        "shape": list(shape),
+        "dtype": dtype_name,
+        "logical_bytes": logical_bytes,
+        "logical_flops": 2 * rows * hidden,
+        "correctness": correctness,
+        **measurements,
+    }
+
+
+def _run_paged_gather_case(
+    torch: Any,
+    shape: tuple[int, int],
+    dtype_name: str,
+    warmup: int,
+    repeats: int,
+    cache_flush: Any | None,
+) -> dict[str, Any]:
+    from triton_kernel_lab.paged_gather import (
+        paged_gather_reference,
+        paged_gather_triton,
+    )
+
+    selected_rows, hidden = shape
+    source_rows = max(selected_rows * 4, selected_rows + 1)
+    dtype = getattr(torch, dtype_name)
+    source = torch.randn((source_rows, hidden), device="cuda", dtype=dtype)
+    indices = torch.randperm(source_rows, device="cuda")[:selected_rows].to(torch.int32)
+    expected = paged_gather_reference(source, indices)
+    actual = paged_gather_triton(source, indices)
+    compiled_reference = torch.compile(paged_gather_reference, fullgraph=True)
+    compiled_actual = compiled_reference(source, indices)
+    torch.cuda.synchronize()
+    correctness = _validate_correctness(
+        torch,
+        actual,
+        expected,
+        compiled_actual,
+        shape,
+        dtype_name,
+        "paged-gather",
+    )
+    logical_bytes = 2 * selected_rows * hidden * source.element_size() + selected_rows * 4
+    measurements = _benchmark_implementations(
+        torch=torch,
+        triton_operation=lambda: paged_gather_triton(source, indices),
+        compiled_operation=lambda: compiled_reference(source, indices),
+        eager_operation=lambda: paged_gather_reference(source, indices),
+        warmup=warmup,
+        repeats=repeats,
+        cache_flush=cache_flush,
+        logical_bytes=logical_bytes,
+    )
+    return {
+        "kernel": "paged-gather",
+        "shape": list(shape),
+        "source_rows": source_rows,
+        "dtype": dtype_name,
+        "logical_bytes": logical_bytes,
+        "logical_flops": 0,
+        "correctness": correctness,
+        **measurements,
+    }
+
+
+def _run_selective_attention_case(
+    torch: Any,
+    shape: tuple[int, int],
+    dtype_name: str,
+    warmup: int,
+    repeats: int,
+    cache_flush: Any | None,
+) -> dict[str, Any]:
+    from triton_kernel_lab.selective_attention import (
+        selective_attention_reference,
+        selective_attention_triton,
+    )
+
+    selected_rows, hidden = shape
+    source_rows = max(selected_rows * 4, selected_rows + 1)
+    dtype = getattr(torch, dtype_name)
+    query = torch.randn(hidden, device="cuda", dtype=dtype)
+    keys = torch.randn((source_rows, hidden), device="cuda", dtype=dtype)
+    values = torch.randn((source_rows, hidden), device="cuda", dtype=dtype)
+    indices = torch.randperm(source_rows, device="cuda")[:selected_rows].to(torch.int32)
+    expected = selective_attention_reference(query, keys, values, indices)
+    actual = selective_attention_triton(query, keys, values, indices)
+    compiled_reference = torch.compile(
+        selective_attention_reference,
+        fullgraph=True,
+    )
+    compiled_actual = compiled_reference(query, keys, values, indices)
+    torch.cuda.synchronize()
+    correctness = _validate_correctness(
+        torch,
+        actual,
+        expected,
+        compiled_actual,
+        (1, hidden),
+        dtype_name,
+        "selective-attention",
+    )
+    logical_bytes = (
+        (2 * selected_rows * hidden + 2 * hidden) * query.element_size()
+        + selected_rows * 4
+    )
+    measurements = _benchmark_implementations(
+        torch=torch,
+        triton_operation=lambda: selective_attention_triton(
+            query,
+            keys,
+            values,
+            indices,
+        ),
+        compiled_operation=lambda: compiled_reference(
+            query,
+            keys,
+            values,
+            indices,
+        ),
+        eager_operation=lambda: selective_attention_reference(
+            query,
+            keys,
+            values,
+            indices,
+        ),
+        warmup=warmup,
+        repeats=repeats,
+        cache_flush=cache_flush,
+        logical_bytes=logical_bytes,
+    )
+    return {
+        "kernel": "selective-attention",
+        "shape": list(shape),
+        "source_rows": source_rows,
+        "selected_fraction": selected_rows / source_rows,
+        "dtype": dtype_name,
+        "logical_bytes": logical_bytes,
+        "logical_flops": 4 * selected_rows * hidden + 5 * selected_rows,
+        "correctness": correctness,
+        **measurements,
+    }
+
+
+def _run_residual_rmsnorm_case(
+    torch: Any,
+    shape: tuple[int, int],
+    dtype_name: str,
+    epsilon: float,
+    warmup: int,
+    repeats: int,
+    cache_flush: Any | None,
+) -> dict[str, Any]:
+    from triton_kernel_lab.residual_rmsnorm import (
+        residual_rmsnorm_reference,
+        residual_rmsnorm_triton,
+    )
+
+    dtype = getattr(torch, dtype_name)
+    inputs = torch.randn(shape, device="cuda", dtype=dtype)
+    residual = torch.randn(shape, device="cuda", dtype=dtype)
+    weight = torch.randn((shape[1],), device="cuda", dtype=dtype)
+    expected = residual_rmsnorm_reference(inputs, residual, weight, epsilon)
+    actual = residual_rmsnorm_triton(inputs, residual, weight, epsilon)
+    compiled_reference = torch.compile(residual_rmsnorm_reference, fullgraph=True)
+    compiled_actual = compiled_reference(inputs, residual, weight, epsilon)
+    torch.cuda.synchronize()
+    normalized_correctness = _validate_correctness(
+        torch,
+        actual[0],
+        expected[0],
+        compiled_actual[0],
+        shape,
+        dtype_name,
+        "residual-rmsnorm:normalized",
+    )
+    residual_correctness = _validate_correctness(
+        torch,
+        actual[1],
+        expected[1],
+        compiled_actual[1],
+        shape,
+        dtype_name,
+        "residual-rmsnorm:residual",
+    )
+    rows, hidden = shape
+    logical_bytes = (4 * rows * hidden + hidden) * inputs.element_size()
+    measurements = _benchmark_implementations(
+        torch=torch,
+        triton_operation=lambda: residual_rmsnorm_triton(
+            inputs, residual, weight, epsilon
+        ),
+        compiled_operation=lambda: compiled_reference(
+            inputs, residual, weight, epsilon
+        ),
+        eager_operation=lambda: residual_rmsnorm_reference(
+            inputs, residual, weight, epsilon
+        ),
+        warmup=warmup,
+        repeats=repeats,
+        cache_flush=cache_flush,
+        logical_bytes=logical_bytes,
+    )
+    return {
+        "kernel": "residual-rmsnorm",
+        "shape": list(shape),
+        "dtype": dtype_name,
+        "epsilon": epsilon,
+        "logical_bytes": logical_bytes,
+        "logical_flops": 6 * rows * hidden,
+        "correctness": {
+            "passed": True,
+            "normalized": normalized_correctness,
+            "residual": residual_correctness,
+        },
+        **measurements,
+    }
+
+
+def _run_int4_gemv_case(
+    torch: Any,
+    shape: tuple[int, int],
+    dtype_name: str,
+    warmup: int,
+    repeats: int,
+    cache_flush: Any | None,
+) -> dict[str, Any]:
+    from triton_kernel_lab.int4_gemv import (
+        int4_gemv_reference,
+        int4_gemv_triton,
+        pack_int4,
+    )
+
+    output_rows, input_size = shape
+    if input_size % 2:
+        raise ValueError("int4-gemv requires an even hidden dimension")
+    dtype = getattr(torch, dtype_name)
+    inputs = torch.randn((input_size,), device="cuda", dtype=dtype)
+    weights = torch.randint(
+        -8,
+        8,
+        (output_rows, input_size),
+        device="cuda",
+        dtype=torch.int8,
+    )
+    packed_weight = pack_int4(weights)
+    scales = torch.rand(output_rows, device="cuda", dtype=torch.float32) * 0.2 + 0.01
+    expected = int4_gemv_reference(inputs, packed_weight, scales)
+    actual = int4_gemv_triton(inputs, packed_weight, scales)
+    compiled_reference = torch.compile(int4_gemv_reference, fullgraph=True)
+    compiled_actual = compiled_reference(inputs, packed_weight, scales)
+    torch.cuda.synchronize()
+    correctness = _validate_correctness(
+        torch,
+        actual,
+        expected,
+        compiled_actual,
+        shape,
+        dtype_name,
+        "int4-gemv",
+    )
+    logical_bytes = (
+        input_size * inputs.element_size()
+        + packed_weight.numel()
+        + output_rows * 4
+        + output_rows * 4
+    )
+    measurements = _benchmark_implementations(
+        torch=torch,
+        triton_operation=lambda: int4_gemv_triton(inputs, packed_weight, scales),
+        compiled_operation=lambda: compiled_reference(inputs, packed_weight, scales),
+        eager_operation=lambda: int4_gemv_reference(inputs, packed_weight, scales),
+        warmup=warmup,
+        repeats=repeats,
+        cache_flush=cache_flush,
+        logical_bytes=logical_bytes,
+    )
+    return {
+        "kernel": "int4-gemv",
+        "shape": list(shape),
+        "dtype": dtype_name,
+        "weight_bits": 4,
+        "scale_granularity": "per-output-row",
+        "logical_bytes": logical_bytes,
+        "logical_flops": 2 * output_rows * input_size,
+        "correctness": correctness,
+        **measurements,
+    }
+
+
 def _build_report(args: argparse.Namespace) -> dict[str, Any]:
     try:
         import torch
@@ -369,8 +707,54 @@ def _build_report(args: argparse.Namespace) -> dict[str, Any]:
                         repeats=args.repeats,
                         cache_flush=cache_flush,
                     )
-                else:
+                elif kernel == "swiglu":
                     case = _run_swiglu_case(
+                        torch=torch,
+                        shape=shape,
+                        dtype_name=dtype_name,
+                        warmup=args.warmup,
+                        repeats=args.repeats,
+                        cache_flush=cache_flush,
+                    )
+                elif kernel == "qk-dot":
+                    case = _run_qk_dot_case(
+                        torch=torch,
+                        shape=shape,
+                        dtype_name=dtype_name,
+                        warmup=args.warmup,
+                        repeats=args.repeats,
+                        cache_flush=cache_flush,
+                    )
+                elif kernel == "paged-gather":
+                    case = _run_paged_gather_case(
+                        torch=torch,
+                        shape=shape,
+                        dtype_name=dtype_name,
+                        warmup=args.warmup,
+                        repeats=args.repeats,
+                        cache_flush=cache_flush,
+                    )
+                elif kernel == "selective-attention":
+                    case = _run_selective_attention_case(
+                        torch=torch,
+                        shape=shape,
+                        dtype_name=dtype_name,
+                        warmup=args.warmup,
+                        repeats=args.repeats,
+                        cache_flush=cache_flush,
+                    )
+                elif kernel == "residual-rmsnorm":
+                    case = _run_residual_rmsnorm_case(
+                        torch=torch,
+                        shape=shape,
+                        dtype_name=dtype_name,
+                        epsilon=args.epsilon,
+                        warmup=args.warmup,
+                        repeats=args.repeats,
+                        cache_flush=cache_flush,
+                    )
+                else:
+                    case = _run_int4_gemv_case(
                         torch=torch,
                         shape=shape,
                         dtype_name=dtype_name,
