@@ -112,5 +112,6 @@ python -m compileall -q src tests
 ## Scope
 
 This is a focused kernel and measurement lab, not a claim of production-scale
-GPU infrastructure. Planned extensions are fused gated activations,
-hardware-counter capture with Nsight Compute, and shape-specific autotuning.
+GPU infrastructure. Planned extensions are hardware-counter capture with
+Nsight Compute, roofline analysis, and additional low-precision inference
+kernels.
