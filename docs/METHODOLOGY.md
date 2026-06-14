@@ -29,6 +29,19 @@ compares three launch configurations per tensor size:
 Autotuning occurs before timed samples. The PyTorch oracle computes the same
 expression in FP32 before converting back to the input dtype.
 
+The decode suite adds:
+
+- QK dot-product with one program per KV position and FP32 accumulation.
+- Paged KV gather with explicit logical-to-physical page mapping.
+- Fused selected-row attention that loads indirect K/V rows, computes QK scores
+  and softmax in FP32, and accumulates the selected values in one Triton program.
+- Fused residual addition and RMSNorm with both the combined residual and
+  normalized output returned.
+- Signed INT4 GEMV with two weights packed per byte, unpacked in-kernel, and
+  accumulated in FP32.
+
+Every implementation is checked against a PyTorch oracle before timing.
+
 ## Timing
 
 - Warmup iterations compile the Triton kernel and stabilize allocator/runtime state.
@@ -53,9 +66,20 @@ The reported bandwidth is a transparent logical model:
 
 It does not claim to be a hardware-counter measurement. Weight caching, compiler
 behavior, and memory transactions can make physical traffic differ from the
-logical byte count. Nsight Compute was not available for the checked-in run and
-should be used when DRAM traffic, cache behavior, occupancy, or instruction-mix
-evidence is required.
+logical byte count.
+
+`triton-kernel-roofline` combines checked benchmark artifacts with explicit
+peak-bandwidth and peak-compute assumptions. It reports arithmetic intensity,
+the specification-derived ceiling, and logical efficiency. Cases with no
+logical arithmetic, such as paged gather, are classified as data movement only.
+
+Nsight Compute 2026.2 is installed at
+`/opt/nvidia/nsight-compute/2026.2.0/ncu` in WSL2. The
+`triton-kernel-nsight` command filters one custom Triton kernel and requests
+SpeedOfLight, memory-workload, occupancy, and compute-workload sections. The
+current Windows host denies performance-counter access with
+`ERR_NVGPUCTRPERM`; no counter-derived evidence is checked in until the user
+enables that host security setting.
 
 ## Regression Gate
 
