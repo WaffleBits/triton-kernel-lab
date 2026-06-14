@@ -3,10 +3,10 @@
 The benchmark treats correctness and reproducibility as release criteria, not as
 notes around a headline speedup.
 
-## Kernel
+## Kernels
 
-The first workload is RMSNorm, an inference-relevant reduction and elementwise
-operation. One Triton program handles one row:
+RMSNorm is an inference-relevant reduction and elementwise operation. One
+Triton program handles one row:
 
 1. Load the row and accumulate squared values in FP32.
 2. Compute reciprocal RMS with the configured epsilon.
@@ -16,6 +16,18 @@ operation. One Triton program handles one row:
 The PyTorch oracle also accumulates in FP32 before converting back to the input
 dtype. Every benchmark case validates both the custom kernel and a
 `torch.compile` version against that oracle before timing.
+
+SwiGLU is an inference-relevant gated activation. The Triton implementation
+loads the gate and up-projection tensors, computes SiLU in FP32, multiplies by
+the up projection, and writes the result in one kernel. Triton autotuning
+compares three launch configurations per tensor size:
+
+- 256 elements per program with 4 warps.
+- 512 elements per program with 4 warps.
+- 1024 elements per program with 8 warps.
+
+Autotuning occurs before timed samples. The PyTorch oracle computes the same
+expression in FP32 before converting back to the input dtype.
 
 ## Timing
 
@@ -41,8 +53,9 @@ The reported bandwidth is a transparent logical model:
 
 It does not claim to be a hardware-counter measurement. Weight caching, compiler
 behavior, and memory transactions can make physical traffic differ from the
-logical byte count. Nsight Compute should be used when hardware-counter evidence
-is required.
+logical byte count. Nsight Compute was not available for the checked-in run and
+should be used when DRAM traffic, cache behavior, occupancy, or instruction-mix
+evidence is required.
 
 ## Regression Gate
 

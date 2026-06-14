@@ -21,6 +21,10 @@ def test_parse_shape_rejects_invalid_values(value: str) -> None:
 def test_parser_accepts_repeated_cases() -> None:
     args = build_parser().parse_args(
         [
+            "--kernel",
+            "rmsnorm",
+            "--kernel",
+            "swiglu",
             "--shape",
             "128x1024",
             "--shape",
@@ -31,6 +35,6 @@ def test_parser_accepts_repeated_cases() -> None:
             "bfloat16",
         ]
     )
+    assert args.kernels == ["rmsnorm", "swiglu"]
     assert args.shapes == [(128, 1024), (512, 4096)]
     assert args.dtypes == ["float16", "bfloat16"]
-
