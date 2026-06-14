@@ -17,6 +17,8 @@ keywords = [
     "inference",
     "performance-engineering",
     "rmsnorm",
+    "swiglu",
+    "autotuning",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
