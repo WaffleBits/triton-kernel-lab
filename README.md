@@ -2,14 +2,16 @@
 
 Correctness-first GPU kernel work for inference performance engineering.
 
-The repository starts with a fused RMSNorm kernel written in Triton, a
-high-precision PyTorch oracle, PyTorch eager and `torch.compile` baselines, raw
+The repository contains fused RMSNorm and SwiGLU kernels written in Triton,
+high-precision PyTorch oracles, PyTorch eager and `torch.compile` baselines, raw
 latency samples, effective-bandwidth modeling, machine-readable reports, and a
 baseline regression gate.
 
 ## What It Demonstrates
 
-- Triton GPU kernel development with FP32 reduction and fused normalization.
+- Triton GPU kernel development with FP32 reduction, fused normalization, and
+  fused gated activation.
+- Shape-aware SwiGLU launch autotuning across block sizes and warp counts.
 - Correctness validation across shapes and low-precision dtypes before timing,
   including validation of the `torch.compile` baseline against the FP32 oracle.
 - GPU benchmarking with warmup, CUDA events, p50/p95/p99/max latency, explicit
@@ -30,6 +32,8 @@ python -m pip install --upgrade pip
 python -m pip install -e ".[gpu,dev]"
 
 triton-kernel-lab \
+  --kernel rmsnorm \
+  --kernel swiglu \
   --shape 128x1024 \
   --shape 512x4096 \
   --shape 2048x4096 \
@@ -44,35 +48,41 @@ resident-working-set result is intentionally required.
 
 ## Measured Result
 
-Cache-cold run on June 12, 2026 using an RTX 5070 Ti, CUDA 13.0, PyTorch 2.12,
+Cache-cold run on June 14, 2026 using an RTX 5070 Ti, CUDA 13.0, PyTorch 2.12,
 and Triton 3.7. Each case used 100 warmups, 500 timed samples, and a 256 MiB
-cache-eviction buffer outside the timed region.
+cache-eviction buffer outside the timed region. The table shows FP16; the
+artifact also includes BF16.
 
-| Shape | Dtype | Triton p50 | `torch.compile` p50 | Speedup |
+| Kernel | Shape | Triton p50 | `torch.compile` p50 | Speedup |
 |---|---:|---:|---:|---:|
-| 128 x 1024 | FP16 | 0.0061 ms | 0.0150 ms | 2.44x |
-| 512 x 4096 | FP16 | 0.0143 ms | 0.0164 ms | 1.15x |
-| 2048 x 4096 | FP16 | 0.0451 ms | 0.0522 ms | 1.16x |
-| 128 x 1024 | BF16 | 0.0061 ms | 0.0123 ms | 2.01x |
-| 512 x 4096 | BF16 | 0.0144 ms | 0.0195 ms | 1.36x |
-| 2048 x 4096 | BF16 | 0.0431 ms | 0.0532 ms | 1.23x |
+| RMSNorm | 128 x 1024 | 0.0058 ms | 0.0127 ms | 2.21x |
+| RMSNorm | 512 x 4096 | 0.0135 ms | 0.0235 ms | 1.74x |
+| RMSNorm | 2048 x 4096 | 0.0427 ms | 0.0532 ms | 1.25x |
+| SwiGLU | 128 x 1024 | 0.0061 ms | 0.0126 ms | 2.07x |
+| SwiGLU | 512 x 4096 | 0.0184 ms | 0.0249 ms | 1.35x |
+| SwiGLU | 2048 x 4096 | 0.0678 ms | 0.0728 ms | 1.07x |
 
 The full environment record, correctness errors, p95/p99 tails, and timing
 samples are in
-[artifacts/rtx-5070-ti-rmsnorm.json](artifacts/rtx-5070-ti-rmsnorm.json).
+[artifacts/rtx-5070-ti-rmsnorm-swiglu.json](artifacts/rtx-5070-ti-rmsnorm-swiglu.json).
 These results are specific to this hardware and software stack.
+
+The reported bandwidth remains a logical traffic model. Nsight Compute was not
+available in this environment, so the repository does not claim measured DRAM
+transactions, cache hit rates, occupancy, or tensor-core utilization.
 
 ## Regression Gate
 
 ```bash
 triton-kernel-lab \
-  --baseline artifacts/rtx-5070-ti-rmsnorm.json \
+  --baseline artifacts/rtx-5070-ti-rmsnorm-swiglu.json \
   --max-regression-percent 10 \
   --output artifacts/candidate.json
 ```
 
-Matching cases are identified by kernel, shape, and dtype. Exit code `2` means a
-Triton p50 regression exceeded the configured threshold.
+Matching cases are identified by kernel, shape, and dtype, so older RMSNorm-only
+baselines remain valid. Exit code `2` means a Triton p50 regression exceeded the
+configured threshold.
 
 ## Report Shape
 
