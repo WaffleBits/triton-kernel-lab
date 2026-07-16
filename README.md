@@ -1,12 +1,16 @@
 # Triton Kernel Lab
 
+![Triton vs torch.compile vs eager p50 latency on RTX 5070 Ti](assets/rmsnorm-swiglu-p50.png)
+
+FP16 RMSNorm and SwiGLU p50 latency on an RTX 5070 Ti, cache-cold, 500 timed samples per case, Triton against torch.compile and PyTorch eager.
+
 Correctness-first GPU kernel work for inference performance engineering.
 
-The repository contains RMSNorm, SwiGLU, decode QK dot-product, paged KV gather,
-fused residual-plus-RMSNorm, and signed INT4 GEMV kernels written in Triton,
-high-precision PyTorch oracles, PyTorch eager and `torch.compile` baselines, raw
-latency samples, roofline modeling, machine-readable reports, and a baseline
-regression gate.
+The repository holds Triton kernels for RMSNorm, SwiGLU, and several decode
+paths, each paired with a high-precision PyTorch oracle. Every kernel is timed
+against PyTorch eager and `torch.compile` baselines. Runs emit raw latency
+samples, roofline models, and machine-readable reports, and a baseline
+regression gate guards against slowdowns.
 
 ## What It Demonstrates
 
