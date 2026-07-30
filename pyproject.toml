@@ -46,6 +46,7 @@ dev = [
 triton-kernel-lab = "triton_kernel_lab.benchmark:main"
 triton-kernel-roofline = "triton_kernel_lab.roofline:main"
 triton-kernel-nsight = "triton_kernel_lab.nsight:main"
+triton-kernel-artifacts = "triton_kernel_lab.artifacts:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
