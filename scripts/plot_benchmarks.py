@@ -1,9 +1,11 @@
 """Hero chart of Triton vs torch.compile vs eager p50 latency from a committed artifact."""
+
 import json
 import sys
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
@@ -44,7 +46,7 @@ def main(artifact_path: str, out_path: str) -> None:
         vals = [g[1][b]["p50_ms"] for g in groups]
         bars = ax.bar([x + offs for x in xs], vals, width=width,
                       color=COLORS[b], label=LABELS[b])
-        for rect, v in zip(bars, vals):
+        for rect, v in zip(bars, vals, strict=True):
             ax.text(rect.get_x() + rect.get_width() / 2, v, f"{v:.3f}",
                     ha="center", va="bottom", color=FG, fontsize=8)
 
@@ -52,8 +54,12 @@ def main(artifact_path: str, out_path: str) -> None:
     ax.set_xticks(xs)
     ax.set_xticklabels([g[0] for g in groups], color=FG, fontsize=9.5)
     ax.set_ylabel("p50 latency (ms, log scale, lower is better)", color=FG, fontsize=11)
-    ax.set_title(f"Triton kernel p50 latency on {gpu}\nFP16, cache-cold, 500 timed samples per case",
-                 color=FG, fontsize=13, pad=12)
+    ax.set_title(
+        f"Triton kernel p50 latency on {gpu}\nFP16, cache-cold, 500 timed samples per case",
+        color=FG,
+        fontsize=13,
+        pad=12,
+    )
     ax.tick_params(colors=FG)
     for spine in ax.spines.values():
         spine.set_color(GRID)

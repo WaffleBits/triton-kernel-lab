@@ -1,5 +1,7 @@
 # Triton Kernel Lab
 
+[![CI](https://github.com/WaffleBits/triton-kernel-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/WaffleBits/triton-kernel-lab/actions/workflows/ci.yml)
+
 ![Triton vs torch.compile vs eager p50 latency on RTX 5070 Ti](assets/rmsnorm-swiglu-p50.png)
 
 FP16 RMSNorm and SwiGLU p50 latency on an RTX 5070 Ti, cache-cold, 500 timed samples per case, Triton against torch.compile and PyTorch eager.
@@ -26,6 +28,8 @@ regression gate guards against slowdowns.
 - Performance reasoning that distinguishes a logical bandwidth model from
   hardware-counter evidence.
 - CPU-only CI for parsers, statistics, report contracts, linting, and CLI shape.
+- CPU-only validation that recomputes every committed timing summary and derived
+  roofline case from the raw JSON evidence.
 - A lab-oriented regression gate for controlled GPU runners.
 
 ## Quick Start
@@ -132,6 +136,17 @@ Each JSON report includes:
 - Speedup against both PyTorch baselines and transparent logical
   effective-bandwidth estimates.
 
+Committed artifacts have an additional CPU-only integrity gate. It rejects
+non-finite JSON, sensitive fields, failed correctness records, duplicate cases,
+mismatched raw sample counts, stale percentile/speedup/bandwidth summaries, and
+roofline cases that no longer reproduce from their named source artifacts:
+
+```bash
+triton-kernel-artifacts
+```
+
+This validates the published records; it does not rerun a GPU measurement.
+
 See [docs/METHODOLOGY.md](docs/METHODOLOGY.md) for assumptions and limitations.
 
 ## Development
@@ -142,6 +157,7 @@ CPU-side validation does not install the GPU stack:
 python -m pip install -e ".[dev]"
 ruff check .
 pytest
+triton-kernel-artifacts
 python -m compileall -q src tests
 ```
 
